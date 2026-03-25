@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureIntel — AI Log Analysis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080b0f;
+      --surface:   #0e1318;
+      --surface2:  #131a22;
+      --border:    #1e2d3d;
+      --border2:   #243040;
+      --text:      #c8d8e8;
+      --muted:     #4a6075;
+      --accent:    #00e5ff;
+      --accent2:   #00b8cc;
+      --critical:  #ff3d5a;
+      --high:      #ff8c00;
+      --medium:    #ffd700;
+      --low:       #00e5a0;
+      --scan-line: rgba(0,229,255,0.03);
+      --glow:      0 0 20px rgba(0,229,255,0.15);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* CRT scan-line overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        var(--scan-line) 2px,
+        var(--scan-line) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────── */
+    .wrapper {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    header {
+      padding: 40px 0 32px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 40px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      border: 2px solid var(--accent);
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+      flex-shrink: 0;
+      box-shadow: var(--glow), inset 0 0 12px rgba(0,229,255,0.1);
+      animation: pulse-border 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: var(--glow), inset 0 0 12px rgba(0,229,255,0.1); }
+      50%       { box-shadow: 0 0 30px rgba(0,229,255,0.3), inset 0 0 20px rgba(0,229,255,0.15); }
+    }
+
+    .header-text h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.3px;
+    }
+
+    .header-text h1 span { color: var(--accent); }
+
+    .header-text p {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 3px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .status-badge {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--low);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--low);
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── Panel ─────────────────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .panel-header {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .panel-header .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.7;
+    }
+
+    .panel-body { padding: 20px; }
+
+    /* ── Tabs ───────────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .tab {
+      padding: 10px 18px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      user-select: none;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      font-family: inherit;
+    }
+
+    .tab:hover { color: var(--text); }
+
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* ── Input Panels ───────────────────────────────────────────── */
+    .input-section { display: none; }
+    .input-section.active { display: block; }
+
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      padding: 14px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+
+    textarea::placeholder { color: var(--muted); }
+
+    /* ── File Drop Zone ─────────────────────────────────────────── */
+    .drop-zone {
+      border: 1px dashed var(--border2);
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.03);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+      display: block;
+      opacity: 0.5;
+    }
+
+    .drop-label {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .drop-label strong { color: var(--accent); }
+
+    .file-selected {
+      margin-top: 12px;
+      font-size: 11px;
+      color: var(--low);
+      display: none;
+    }
+
+    /* ── Submit Button ──────────────────────────────────────────── */
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      margin-top: 16px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      font-family: 'Syne', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .submit-btn:hover:not(:disabled) {
+      background: #33eeff;
+      box-shadow: 0 0 24px rgba(0,229,255,0.4);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .submit-btn .btn-text { position: relative; z-index: 1; }
+
+    /* Shimmer animation on loading */
+    .submit-btn::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%; bottom: 0;
+      width: 60%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+      transition: left 0s;
+    }
+
+    .submit-btn.loading::after {
+      animation: shimmer 1.2s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      from { left: -60%; }
+      to   { left: 140%; }
+    }
+
+    /* ── Results Panel ──────────────────────────────────────────── */
+    #results { display: none; }
+
+    /* ── Risk Score Display ─────────────────────────────────────── */
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .score-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 14px;
+      text-align: center;
+    }
+
+    .score-card .label {
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .score-card .value {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      font-weight: 800;
+    }
+
+    .score-card .value.critical { color: var(--critical); }
+    .score-card .value.high     { color: var(--high); }
+    .score-card .value.medium   { color: var(--medium); }
+    .score-card .value.low      { color: var(--low); }
+
+    /* ── Summary ────────────────────────────────────────────────── */
+    .summary-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      font-size: 12px;
+      line-height: 1.7;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+
+    /* ── Insights ───────────────────────────────────────────────── */
+    .insights-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .insights-list li {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+
+    /* ── Findings Table ─────────────────────────────────────────── */
+    .findings-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .findings-table th {
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-weight: 400;
+    }
+
+    .findings-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .findings-table tr:last-child td { border-bottom: none; }
+
+    .findings-table tr:hover td { background: rgba(0,229,255,0.03); }
+
+    .risk-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .risk-pill.critical { background: rgba(255,61,90,0.15);  color: var(--critical); border: 1px solid rgba(255,61,90,0.3); }
+    .risk-pill.high     { background: rgba(255,140,0,0.15);  color: var(--high);     border: 1px solid rgba(255,140,0,0.3); }
+    .risk-pill.medium   { background: rgba(255,215,0,0.12);  color: var(--medium);   border: 1px solid rgba(255,215,0,0.3); }
+    .risk-pill.low      { background: rgba(0,229,160,0.12);  color: var(--low);      border: 1px solid rgba(0,229,160,0.3); }
+
+    /* ── JSON Output ────────────────────────────────────────────── */
+    .json-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 16px;
+      font-size: 11px;
+      line-height: 1.8;
+      overflow-x: auto;
+      white-space: pre;
+      color: #7ab0cc;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    /* JSON syntax highlighting */
+    .json-key    { color: #64b5f6; }
+    .json-string { color: #a5d6a7; }
+    .json-number { color: #ffcc80; }
+    .json-bool   { color: #f48fb1; }
+    .json-null   { color: var(--muted); }
+
+    /* ── Section label ──────────────────────────────────────────── */
+    .section-label {
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* ── Error Box ──────────────────────────────────────────────── */
+    .error-box {
+      background: rgba(255,61,90,0.08);
+      border: 1px solid rgba(255,61,90,0.3);
+      color: var(--critical);
+      padding: 12px 16px;
+      font-size: 12px;
+      display: none;
+    }
+
+    /* ── No findings ────────────────────────────────────────────── */
+    .empty-findings {
+      text-align: center;
+      color: var(--muted);
+      padding: 30px;
+      font-size: 12px;
+    }
+
+    /* ── Collapsible raw JSON ───────────────────────────────────── */
+    .toggle-raw {
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 10px;
+    }
+
+    .toggle-raw:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      margin-top: 60px;
+      padding-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Scrollbar ──────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .score-grid { grid-template-columns: repeat(2, 1fr); }
+      header { flex-wrap: wrap; }
+      .status-badge { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="logo-icon">🛡</div>
+    <div class="header-text">
+      <h1>Secure<span>Intel</span></h1>
+      <p>AI Secure Data Intelligence Platform</p>
+    </div>
+    <div class="status-badge">
+      <div class="status-dot"></div>
+      System Online
+    </div>
+  </header>
+
+  <!-- Input Panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="dot"></div>
+      Log Input — Paste Text or Upload File
+    </div>
+    <div class="panel-body">
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('text')">Raw Text</button>
+        <button class="tab" onclick="switchTab('file')">File Upload</button>
+      </div>
+
+      <!-- Text Input -->
+      <div class="input-section active" id="section-text">
+        <textarea
+          id="text-input"
+          placeholder="Paste log content here...&#10;&#10;Example:&#10;2024-01-15 10:23:41 INFO User login: user@example.com&#10;2024-01-15 10:24:01 ERROR Login failed for user admin&#10;2024-01-15 10:24:22 DEBUG password=SuperSecret123&#10;2024-01-15 10:24:45 INFO api_key=sk-abc123xyz789secret"
+        ></textarea>
+      </div>
+
+      <!-- File Upload -->
+      <div class="input-section" id="section-file">
+        <div class="drop-zone" id="drop-zone">
+          <input type="file" id="file-input" accept=".log,.txt" />
+          <span class="drop-icon">📂</span>
+          <div class="drop-label">
+            <strong>Click to browse</strong> or drag & drop<br />
+            Supports: .log / .txt — Max 5MB
+          </div>
+          <div class="file-selected" id="file-label"></div>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div class="error-box" id="error-box"></div>
+
+      <button class="submit-btn" id="submit-btn" onclick="runAnalysis()">
+        <span class="btn-text">▶ Run Security Analysis</span>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+
+    <!-- Score Cards -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="dot"></div>
+        Risk Assessment
+      </div>
+      <div class="panel-body">
+        <div class="score-grid">
+          <div class="score-card">
+            <div class="label">Risk Score</div>
+            <div class="value" id="res-score">—</div>
+          </div>
+          <div class="score-card">
+            <div class="label">Risk Level</div>
+            <div class="value" id="res-level">—</div>
+          </div>
+          <div class="score-card">
+            <div class="label">Findings</div>
+            <div class="value" id="res-count">—</div>
+          </div>
+        </div>
+
+        <div class="section-label">Summary</div>
+        <div class="summary-box" id="res-summary"></div>
+      </div>
+    </div>
+
+    <!-- Insights -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="dot"></div>
+        AI Insights
+      </div>
+      <div class="panel-body">
+        <ul class="insights-list" id="res-insights"></ul>
+      </div>
+    </div>
+
+    <!-- Findings Table -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="dot"></div>
+        Detailed Findings
+      </div>
+      <div class="panel-body">
+        <div id="res-findings-container"></div>
+      </div>
+    </div>
+
+    <!-- Raw JSON -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="dot"></div>
+        Raw JSON Response
+      </div>
+      <div class="panel-body">
+        <button class="toggle-raw" onclick="toggleRaw()">[ toggle raw output ]</button>
+        <div id="raw-json-wrapper" style="display:none">
+          <pre class="json-block" id="res-json"></pre>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <span>SECURE_INTEL v1.0 — Hackathon Build</span>
+    <span>POST /analyze — application/json + multipart/form-data</span>
+  </footer>
+
+</div>
+
+<script>
+  const API_URL = '/analyze';
+
+  let activeTab = 'text';
+  let rawJsonVisible = false;
+
+  // ── Tab Switching ────────────────────────────────────────────────
+  function switchTab(tab) {
+    activeTab = tab;
+    document.querySelectorAll('.tab').forEach((el, i) => {
+      el.classList.toggle('active', (i === 0 && tab === 'text') || (i === 1 && tab === 'file'));
+    });
+    document.querySelectorAll('.input-section').forEach(el => el.classList.remove('active'));
+    document.getElementById(`section-${tab}`).classList.add('active');
+    hideError();
+  }
+
+  // ── File Input ───────────────────────────────────────────────────
+  document.getElementById('file-input').addEventListener('change', function () {
+    const file = this.files[0];
+    const label = document.getElementById('file-label');
+    if (file) {
+      label.textContent = `✓ ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      label.style.display = 'block';
+    }
+  });
+
+  const dropZone = document.getElementById('drop-zone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const input = document.getElementById('file-input');
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change'));
+    }
+  });
+
+  // ── Submit ───────────────────────────────────────────────────────
+  async function runAnalysis() {
+    hideError();
+    const btn = document.getElementById('submit-btn');
+    setLoading(true);
+
+    try {
+      let response;
+
+      if (activeTab === 'file') {
+        const fileInput = document.getElementById('file-input');
+        if (!fileInput.files.length) {
+          showError('Please select a .log or .txt file before analyzing.');
+          return;
+        }
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        response = await fetch(API_URL, { method: 'POST', body: formData });
+      } else {
+        const text = document.getElementById('text-input').value.trim();
+        if (!text) {
+          showError('Please enter some log text to analyze.');
+          return;
+        }
+        const formData = new FormData();
+        formData.append('text', text);
+        response = await fetch(API_URL, { method: 'POST', body: formData });
+      }
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        showError(err.error || `Server error: ${response.status}`);
+        return;
+      }
+
+      const data = await response.json();
+      renderResults(data);
+    } catch (err) {
+      showError('Could not reach the backend. Make sure the server is running on port 3000.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Render Results ───────────────────────────────────────────────
+  function renderResults(data) {
+    document.getElementById('results').style.display = 'block';
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Score
+    const scoreEl = document.getElementById('res-score');
+    const levelEl = document.getElementById('res-level');
+    const countEl = document.getElementById('res-count');
+    const level = (data.risk_level || 'low').toLowerCase();
+
+    scoreEl.textContent = data.risk_score ?? 0;
+    scoreEl.className = `value ${level}`;
+
+    levelEl.textContent = (data.risk_level || 'low').toUpperCase();
+    levelEl.className = `value ${level}`;
+
+    countEl.textContent = (data.findings || []).length;
+    countEl.className = 'value';
+
+    // Summary
+    document.getElementById('res-summary').textContent = data.summary || '—';
+
+    // Insights
+    const ul = document.getElementById('res-insights');
+    ul.innerHTML = '';
+    (data.insights || []).forEach(insight => {
+      const li = document.createElement('li');
+      li.textContent = insight;
+      ul.appendChild(li);
+    });
+
+    // Findings Table
+    const container = document.getElementById('res-findings-container');
+    if (!data.findings || data.findings.length === 0) {
+      container.innerHTML = '<div class="empty-findings">No findings detected.</div>';
+    } else {
+      const table = document.createElement('table');
+      table.className = 'findings-table';
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Type</th>
+            <th>Risk Level</th>
+            <th>Line</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.findings.map((f, i) => `
+            <tr>
+              <td style="color:var(--muted)">${String(i + 1).padStart(2, '0')}</td>
+              <td>${formatType(f.type)}</td>
+              <td><span class="risk-pill ${f.risk}">${f.risk}</span></td>
+              <td style="color:var(--accent);font-size:11px">L${f.line}</td>
+              <td style="color:var(--muted);font-size:11px">${f.occurrences ? `${f.occurrences} occurrences` : 'Detected'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      `;
+      container.innerHTML = '';
+      container.appendChild(table);
+    }
+
+    // Raw JSON
+    document.getElementById('res-json').innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+  }
+
+  function formatType(type) {
+    return (type || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  // ── JSON Syntax Highlighting ─────────────────────────────────────
+  function syntaxHighlight(json) {
+    return json
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(
+        /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+        match => {
+          let cls = 'json-number';
+          if (/^"/.test(match)) {
+            cls = /:$/.test(match) ? 'json-key' : 'json-string';
+          } else if (/true|false/.test(match)) {
+            cls = 'json-bool';
+          } else if (/null/.test(match)) {
+            cls = 'json-null';
+          }
+          return `<span class="${cls}">${match}</span>`;
+        }
+      );
+  }
+
+  // ── Toggle Raw ───────────────────────────────────────────────────
+  function toggleRaw() {
+    rawJsonVisible = !rawJsonVisible;
+    document.getElementById('raw-json-wrapper').style.display = rawJsonVisible ? 'block' : 'none';
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────
+  function showError(msg) {
+    const el = document.getElementById('error-box');
+    el.textContent = '⚠ ' + msg;
+    el.style.display = 'block';
+  }
+
+  function hideError() {
+    document.getElementById('error-box').style.display = 'none';
+  }
+
+  function setLoading(loading) {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = loading;
+    btn.classList.toggle('loading', loading);
+    btn.querySelector('.btn-text').textContent = loading ? '⏳ Analyzing...' : '▶ Run Security Analysis';
+  }
+</script>
+</body>
+</html>

@@ -117,14 +117,13 @@ curl -X POST http://localhost:3000/analyze \
     { "type": "api_key", "risk": "high", "line": 9 },
     { "type": "stack_trace", "risk": "medium", "line": 11 },
  
-  ],
+  ]
   "risk_score": 134,
   "risk_level": "high",
   "action": "masked",
   "insights": [
     "⚠️ Sensitive credentials are exposed in plain text within logs.",
     "🔑 API keys detected in logs — rotate them immediately to prevent unauthorized access.",
-    "🚨 Multiple failed login attempts detected (3 occurrences) — possible brute-force attack.",
     "📛 Error stack traces reveal internal system structure — suppress in production environments.",
     "📧 Email addresses found in logs — review data retention and privacy compliance."
   ]
@@ -159,7 +158,7 @@ curl -X POST http://localhost:3000/analyze \
 | ≥ 15        | medium     |
 | < 15        | low        |
 
-### Project Setup (Step-by-step)
+## Project Setup (Step-by-step)
 
 1. Clone the repository
 2. Navigate to backend folder  

@@ -115,16 +115,8 @@ curl -X POST http://localhost:3000/analyze \
     { "type": "password", "risk": "critical", "line": 3 },
     { "type": "email", "risk": "low", "line": 4 },
     { "type": "api_key", "risk": "high", "line": 9 },
-    { "type": "phone_number", "risk": "low", "line": 10 },
     { "type": "stack_trace", "risk": "medium", "line": 11 },
-    { "type": "token", "risk": "high", "line": 14 },
-    { "type": "hardcoded_credentials", "risk": "critical", "line": 16 },
-    {
-      "type": "repeated_login_failure",
-      "risk": "medium",
-      "line": 7,
-      "occurrences": 3
-    }
+ 
   ],
   "risk_score": 134,
   "risk_level": "high",
@@ -132,11 +124,9 @@ curl -X POST http://localhost:3000/analyze \
   "insights": [
     "⚠️ Sensitive credentials are exposed in plain text within logs.",
     "🔑 API keys detected in logs — rotate them immediately to prevent unauthorized access.",
-    "🪙 Authentication tokens found in logs — these can be used to impersonate users.",
     "🚨 Multiple failed login attempts detected (3 occurrences) — possible brute-force attack.",
     "📛 Error stack traces reveal internal system structure — suppress in production environments.",
-    "📧 Email addresses found in logs — review data retention and privacy compliance.",
-    "📞 Phone numbers detected in logs — ensure PII handling complies with data protection rules."
+    "📧 Email addresses found in logs — review data retention and privacy compliance."
   ]
 }
 ```
